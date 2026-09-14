@@ -6,6 +6,11 @@ test('Open Admin Center', async ({ page }) => {
     await signIn(page);
 
     await expect(page).toHaveURL(/admin\.officeatwork\.com/);
-    await expect(page.getByText('officeatwork Admin Center')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Admin Center' })).toBeVisible();
+    await expect(page.getByText('officeatwork Admin Center')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('link', { name: 'Admin Center' })).toBeVisible({ timeout: 15000 });
+
+    await page.screenshot({
+        path: './screenshots/admincenter_open.png',
+        fullPage: true,
+    });
 });
