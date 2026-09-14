@@ -4,10 +4,15 @@ export async function signIn(page: Page) {
   const signInButton = page.getByRole('button', { name: 'Sign In' });
   const connectButton = page.getByRole('button', { name: 'Connect' });
 
-  await Promise.race([
-    signInButton.waitFor({ state: 'visible' }),
-    connectButton.waitFor({ state: 'visible' }),
+  const alreadySignedIn = await Promise.race([
+    signInButton.waitFor({ state: 'visible' }).then(() => false),
+    connectButton.waitFor({ state: 'visible' }).then(() => false),
+    page.waitForTimeout(5000).then(() => true),
   ]);
+
+  if (alreadySignedIn) {
+    return;
+  }
 
   if (await signInButton.isVisible()) {
     await signInButton.click();

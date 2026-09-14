@@ -11,21 +11,32 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
+
+
+
+
+
+
 export default defineConfig({
   testDir: './tests',
-  timeout:120000,
+  timeout: 120000,
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
- // forbidOnly: !!process.env.CI,
+  // forbidOnly: !!process.env.CI,
   /* Retry on CI only */
- // retries: process.env.CI ? 2 : 0,
+  // retries: process.env.CI ? 2 : 0,
   /* Opt out of parallel tests on CI. */
- // workers: process.env.CI ? 1 : undefined,
+  // workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
+    viewport: {
+      width: 1000,
+      height: 800,
+
+    },
     /* Base URL to use in actions like `await page.goto('')`. */
     // baseURL: 'http://localhost:3000',
 
@@ -35,11 +46,22 @@ export default defineConfig({
 
   /* Configure projects for major browsers */
   projects: [
-     {
-      name: 'Microsoft Edge',
+    {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
       use: {
         ...devices['Desktop Edge']
-      }}/* ,
+      }
+    },
+    {
+      name: 'Microsoft Edge',
+      testIgnore: /auth\.setup\.ts/,
+      dependencies: ['setup'],
+      use: {
+        ...devices['Desktop Edge'],
+        storageState: 'playwright/.auth/user.json',
+      }
+    }/* ,
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
