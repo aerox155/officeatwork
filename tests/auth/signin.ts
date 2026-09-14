@@ -7,7 +7,7 @@ export async function signIn(page: Page) {
   const alreadySignedIn = await Promise.race([
     signInButton.waitFor({ state: 'visible' }).then(() => false),
     connectButton.waitFor({ state: 'visible' }).then(() => false),
-    page.waitForTimeout(5000).then(() => true),
+    page.waitForTimeout(15000).then(() => true),
   ]);
 
   if (alreadySignedIn) {
