@@ -48,14 +48,14 @@ export default defineConfig({
   projects: [
     {
       name: 'setup',
-      testMatch: /auth\.setup\.ts/,
+      testMatch: /\.setup\.ts$/,
       use: {
         ...devices['Desktop Edge']
       }
     },
     {
       name: 'Microsoft Edge',
-      testIgnore: /auth\.setup\.ts/,
+      testIgnore: /\.setup\.ts$/,
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Edge'],

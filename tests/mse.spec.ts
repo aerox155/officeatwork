@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { signIn } from './auth/signin';
 import { HtmlReport } from './functions/htmlReport';
+import { selectSharePointAtdDestination } from './functions/selectSharePointDestination';
 
 test('test', async ({ page }) => {
     const report = new HtmlReport('Mail Signature Editor');
@@ -13,9 +14,67 @@ test('test', async ({ page }) => {
     await page.getByRole('button', { name: 'New Template' }).click();
     report.step('Opened Templates page');
 
-    //Create new Default Template
-    const parent = page.getByText('Default Signature').locator('..');
-    await parent.locator('..').getByRole('button', { name: 'Apply' }).click();
+    // "New Template" opens a "Choose Design" dialog first - apply any design to
+    // reach the editor, which is where the Save/location dialog lives.
+    await page.getByRole('button', { name: 'Apply' }).first().click();
+    report.step('Applied a design to enter the editor');
+
+    await page.getByRole('button', { name: 'Save' }).click();
+    report.step('Opened save location dialog');
+
+    // Check the save location dialog for a "Launch officeatwork Admin" button, which
+    // only appears when no SharePoint library is configured yet for this tenant.
+    const launchAdminButton = page.getByRole('button', { name: 'Launch officeatwork Admin' });
+    const needsLibrarySetup = await launchAdminButton
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+
+    if (needsLibrarySetup) {
+        report.step('"Launch officeatwork Admin" button appeared - no library configured yet');
+
+        const adminPopupPromise = page.context().waitForEvent('page');
+        await launchAdminButton.click();
+        const adminPage = await adminPopupPromise;
+        await adminPage.waitForLoadState('domcontentloaded');
+        await adminPage.waitForTimeout(6000);
+
+        const addLibraryDialog = adminPage.getByRole('dialog', { name: 'Add SharePoint Library' });
+        await adminPage.getByRole('button', { name: 'Add' }).first().click();
+        // The "Linked Document Library" field is the first textbox in the dialog and has
+        // no accessible name; "Name" is the second, separately-labeled textbox and is
+        // required for Save to be enabled.
+        await selectSharePointAtdDestination(
+            addLibraryDialog.getByRole('textbox').first(),
+            addLibraryDialog.getByRole('textbox', { name: 'Name' }),
+            'ATD',
+            report
+        );
+        await addLibraryDialog.getByRole('button', { name: 'Save', exact: true }).click();
+        await addLibraryDialog.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
+        await expect(adminPage.getByRole('button', { name: 'ATD', exact: true })).toBeVisible({ timeout: 15000 });
+        await adminPage.close();
+        report.step('Added "ATD" SharePoint library in Admin Center');
+    } else {
+        report.step('Library already configured - no need to add via Admin Center');
+    }
+
+    // This save attempt was only for the throwaway design used to check/configure the
+    // library, so cancel it and start a fresh template - this time applying the second
+    // design option, "Default Signature", for the real work below.
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    report.step('Cancelled save, back to Mail Signature editor');
+
+    await page.goto('https://editor.mailsignature.officeatwork.com/#/templates');
+    // Clear the browser cache so the Templates page re-fetches library data instead of
+    // reusing a stale response from before the library was added, then hard-refresh.
+    const cdpSession = await page.context().newCDPSession(page);
+    await cdpSession.send('Network.clearBrowserCache');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    report.step('Refreshed Templates page and cleared browser cache');
+
+    await page.getByRole('button', { name: 'New Template' }).click();
+    await page.getByRole('button', { name: 'Apply' }).nth(1).click();
     report.step('Created new template from "Default Signature"');
 
     //Reaction on some elements
@@ -116,27 +175,114 @@ test('test', async ({ page }) => {
     await page.getByRole('button', { name: 'Done' }).click();
     report.step('Set signature override permissions for users/groups');
 
-    await page.getByRole('button', { name: 'Save' }).click();
-    await page.getByText('General Signature Template').click();
-    await page.getByText('Permission to a group').click();
-    await page.getByText('General Signature Template').click();
-    await page.getByRole('textbox', { name: 'File Name' }).click();
-    //await page.getByRole('textbox', { name: 'File Name' }).fill('FileName');
-    await page.getByRole('button', { name: 'Save' }).click();
-    report.step('Saved general signature template');
+    //add config pane
+    await page.getByRole('button', { name: 'Show configuration form' }).click();
+    report.step('Opened configuration form');
 
+    await page.getByRole('textbox', { name: 'Name', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('temp name');
+    report.step('Filled organization Name');
+
+    await page.getByTestId('text-field-multi-line-organisationAddress').click();
+    await page.getByTestId('text-field-multi-line-organisationAddress').fill('temp add');
+    report.step('Filled organization Address');
+
+    await page.getByRole('textbox', { name: 'Fax' }).click();
+    await page.getByRole('textbox', { name: 'Fax' }).fill('456');
+    report.step('Filled organization Fax');
+
+    // Logo: upload, then replace it with the same image via the "change image" icon.
+    await page.locator('.___ape66w0').first().click();
+    //await page.getByRole('button', { name: 'Upload' }).click();
+    await page.getByTitle('image').setInputFiles('images/banner1.jpg');
+    await page.getByRole('textbox', { name: 'Width' }).click();
+    await page.getByRole('textbox', { name: 'Width' }).fill('155');
+    await page.getByRole('button', { name: 'Done' }).click();
+    report.step('Uploaded Logo image');
+
+    await page.locator('.___ape66w0 > .fui-Icon > path').first().click();
+    //await page.getByRole('button', { name: 'Upload' }).click();
+    await page.getByTitle('image').setInputFiles('images/banner1.jpg');
+    await page.getByRole('button', { name: 'Done' }).click();
+    report.step('Replaced Logo image');
+
+    // Wait for the "Edit Image" panel to fully close before capturing the screenshot,
+    // otherwise it can still be visible (reopened for the next field) when captured.
+    await page.getByRole('heading', { name: 'Edit Image' }).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => { });
+    await report.stepWithScreenshot('Logo uploaded successfully', page);
+
+    // Banner: upload, then replace it with the same image via the "change image" icon.
+    await page.locator('.___ape66w0').click();
+    //await page.getByRole('button', { name: 'Upload' }).click();
+    await page.getByTitle('image').setInputFiles('images/banner2.jpg');
+    await page.getByRole('textbox', { name: 'Width' }).click();
+    await page.getByRole('textbox', { name: 'Width' }).fill('155');
+    await page.getByRole('button', { name: 'Done' }).click();
+    report.step('Uploaded Banner image');
+
+    await page.locator('.___ape66w0 > .fui-Icon').click();
+    //await page.getByRole('button', { name: 'Upload' }).click();
+    await page.getByTitle('image').setInputFiles('images/banner2.jpg');
+    await page.getByRole('button', { name: 'Done' }).click();
+    report.step('Replaced Banner image');
+
+    // Wait for the "Edit Image" panel to fully close before capturing the screenshot.
+    await page.getByRole('heading', { name: 'Edit Image' }).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => { });
+    await report.stepWithScreenshot('Banner uploaded successfully', page);
+
+    await page.getByTestId('text-field-multi-line-legalDisclaimer').click();
+    await page.getByTestId('text-field-multi-line-legalDisclaimer').fill('legal');
+    report.step('Filled legal disclaimer');
+
+    await page.getByRole('radio', { name: 'Specific Users and Groups' }).check();
+    await page.getByRole('combobox', { name: 'Search Users and Groups' }).click();
+    await page.getByRole('radio', { name: 'Everyone' }).check();
+    report.step('Set configuration form visibility to "Everyone"');
+
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    // Navigate the save-location folder tree, clicking each node only if it's actually
+    // present - a locator is always truthy, so each check needs a real visibility wait.
+    const generalLibrary = page.getByText('General Signature Template');
+    if (await generalLibrary.waitFor({ state: 'visible', timeout: 1000 }).then(() => true).catch(() => false)) {
+        await generalLibrary.click();
+    }
+    const permissionToGroup = page.getByText('Permission to a group');
+    if (await permissionToGroup.waitFor({ state: 'visible', timeout: 1000 }).then(() => true).catch(() => false)) {
+        await permissionToGroup.click();
+    }
+    const atdLibrary = page.getByText('ATD');
+    if (await atdLibrary.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) {
+        await atdLibrary.click();
+    }
+
+    const fileNameTextbox = page.getByRole('textbox', { name: 'File Name' });
+    await fileNameTextbox.click();
+    await fileNameTextbox.fill('Automated FileName');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    // isVisible({timeout}) does not actually wait, so a real waitFor is needed here -
+    // without it, the "Overwrite?" confirmation gets missed and the save never
+    // completes, even though the file name was typed in.
     const overwriteHeading = page.getByRole('heading', { name: 'Overwrite?' });
-
-    if (await overwriteHeading.isVisible({ timeout: 1000 }).catch(() => false)) {
+    const needsOverwriteConfirm = await overwriteHeading
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+    if (needsOverwriteConfirm) {
         await page.getByRole('button', { name: 'Yes' }).click();
         report.step('Confirmed overwrite of existing template');
     }
 
-    await page.goto('https://editor.mailsignature.officeatwork.com/#/editor');
+    // Wait for the save dialog to actually close before treating the save as done.
+    await fileNameTextbox.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
+    report.step('Saved general signature template');
     await page.getByRole('button', { name: 'Close' }).click();
-    await page.getByRole('button', { name: 'FileName' }).click();
-    await page.getByText('FileName', { exact: true }).click();
-    report.step('Verified saved signature template "FileName"');
+    //await page.goto('https://editor.mailsignature.officeatwork.com/#/editor');
+
+    await page.getByRole('button', { name: 'Automated FileName' }).click();
+    await page.getByText('Automated FileName', { exact: true }).click();
+    report.step('Verified saved signature template "Automated FileName"');
 
     await report.finish(page);
 });

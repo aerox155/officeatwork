@@ -13,9 +13,5 @@ export async function checkingFileExist(page: Page, fileName: string, report?: H
   await page.getByText(fileName).click();
   report?.step(`Verified file "${fileName}" exists`);
 
-  await page.screenshot({
-    path: `./screenshots/checkingFileExist_${fileName}.png`,
-    fullPage: true,
-  });
   console.log('Passed');
 }
