@@ -185,9 +185,36 @@ test('Create template from SharePoint Template Chooser', async ({ page }) => {
     // saved file via its own live sync rather than needing an explicit refresh or
     // search - reloading here has proven to race a slightly-behind replica.
     const createdFileRow = page.getByRole('button', { name: new RegExp(savedFileName) });
-    await createdFileRow.scrollIntoViewIfNeeded();
+
+    // The document library list is virtualized, so scrollIntoViewIfNeeded() can't
+    // reveal rows that aren't rendered yet - click the custom scrollbar's down-arrow
+    // button (just inside the scroll container's bottom-right corner) repeatedly
+    // until the target row appears.
+    const scrollContainer = page.locator('[class*="scrollableContainerRef"]').first();
+    const scrollBox = await scrollContainer.boundingBox();
+    if (scrollBox) {
+        const downArrowX = scrollBox.x + scrollBox.width - 8;
+        const downArrowY = scrollBox.y + scrollBox.height - 9;
+
+        for (let attempt = 0; attempt < 40; attempt++) {
+            if (await createdFileRow.isVisible().catch(() => false)) {
+                break;
+            }
+            await page.mouse.click(downArrowX, downArrowY);
+            await page.waitForTimeout(150);
+        }
+    }
+
     await expect(createdFileRow).toBeVisible({ timeout: 30000 });
-    report.step(`Found created file "${savedFileName}" in the SharePoint library`);
+
+    // toBeVisible() only confirms the row is rendered in the DOM - for a virtualized
+    // list that can be true while it's still scrolled below the fold. Now that it's
+    // rendered, scrollIntoViewIfNeeded() can actually bring it on screen.
+    await createdFileRow.scrollIntoViewIfNeeded();
+
+    // A fullPage screenshot resizes the viewport to the document's full height, which
+    // disrupts this virtualized list's rendered row window - capture just the viewport.
+    await report.stepWithScreenshot(`Found created file "${savedFileName}" in the SharePoint library`, page, false);
 
     await report.finish(page);
 });

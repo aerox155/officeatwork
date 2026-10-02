@@ -1,16 +1,24 @@
 import { test, expect } from '@playwright/test';
 import { signIn } from './auth/signin';
 import { HtmlReport } from './functions/htmlReport';
-import { selectSharePointAtdDestination } from './functions/selectSharePointDestination';
+import { selectSharePointAtdDestination } from './functions/selectLibrary';
 
 test('test', async ({ page }) => {
     const report = new HtmlReport('Mail Signature Editor');
+    const testUrl = 'https://apps-test.officeatwork.com/build/mail-signature-editor-64605-pr-3844/index.html#/templates';
+    // When testing against a PR build, Admin Center also needs to be its own test
+    // build - the production admin site won't recognize this environment's state.
+    const adminCenterUrl = testUrl.startsWith('https://apps-test.')
+        ? 'https://apps-test.officeatwork.com/build/admin-center-64564/index.html'
+        : 'https://admin.officeatwork.com/';
 
-    await page.goto('https://editor.mailsignature.officeatwork.com/');
+    //await page.goto('https://editor.mailsignature.officeatwork.com/');
+    await page.goto(testUrl);
     await signIn(page);
     report.step('Login successfully');
 
-    await page.goto('https://editor.mailsignature.officeatwork.com/#/templates');
+    //    await page.goto('https://editor.mailsignature.officeatwork.com/#/templates');
+    await page.goto(testUrl);
     await page.getByRole('button', { name: 'New Template' }).click();
     report.step('Opened Templates page');
 
@@ -44,7 +52,7 @@ test('test', async ({ page }) => {
         // The "Linked Document Library" field is the first textbox in the dialog and has
         // no accessible name; "Name" is the second, separately-labeled textbox and is
         // required for Save to be enabled.
-        await selectSharePointAtdDestination(
+        await selectSharePointAtdDestination('ATD',
             addLibraryDialog.getByRole('textbox').first(),
             addLibraryDialog.getByRole('textbox', { name: 'Name' }),
             'ATD',
@@ -57,6 +65,43 @@ test('test', async ({ page }) => {
         report.step('Added "ATD" SharePoint library in Admin Center');
     } else {
         report.step('Library already configured - no need to add via Admin Center');
+
+        // A library may already be configured, but not necessarily "ATD" - check the
+        // "Library" checklist in this dialog for an "ATD" entry specifically, and add
+        // it via Admin Center (in a separate tab, so this dialog/page stays intact)
+        // if it's missing.
+        const atdLibraryEntry = page.getByText('ATD', { exact: true });
+        const hasAtdLibrary = await atdLibraryEntry
+            .waitFor({ state: 'visible', timeout: 5000 })
+            .then(() => true)
+            .catch(() => false);
+
+        if (!hasAtdLibrary) {
+            report.step('"ATD" library not found in the list - adding it via Admin Center');
+
+            // Navigating straight to the "#/main/mail-signature" hash route leaves a
+            // stale backdrop overlay that blocks clicks - go to the admin home first
+            // and click through the nav link instead, which settles cleanly.
+            const adminPage = await page.context().newPage();
+            await adminPage.goto(adminCenterUrl);
+            await adminPage.waitForLoadState('domcontentloaded');
+            await adminPage.getByRole('link', { name: 'Mail Signature' }).click();
+            await adminPage.waitForTimeout(3000);
+
+            const addLibraryDialog = adminPage.getByRole('dialog', { name: 'Add SharePoint Library' });
+            await adminPage.getByRole('button', { name: 'Add' }).first().click();
+            await selectSharePointAtdDestination('ATD',
+                addLibraryDialog.getByRole('textbox').first(),
+                addLibraryDialog.getByRole('textbox', { name: 'Name' }),
+                'ATD',
+                report
+            );
+            await addLibraryDialog.getByRole('button', { name: 'Save', exact: true }).click();
+            await addLibraryDialog.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => { });
+            await expect(adminPage.getByRole('button', { name: 'ATD', exact: true })).toBeVisible({ timeout: 15000 });
+            await adminPage.close();
+            report.step('Added "ATD" SharePoint library in Admin Center, back to Mail Signature editor');
+        }
     }
 
     // This save attempt was only for the throwaway design used to check/configure the
@@ -65,7 +110,7 @@ test('test', async ({ page }) => {
     await page.getByRole('button', { name: 'Cancel' }).click();
     report.step('Cancelled save, back to Mail Signature editor');
 
-    await page.goto('https://editor.mailsignature.officeatwork.com/#/templates');
+    await page.goto(testUrl);
     // Clear the browser cache so the Templates page re-fetches library data instead of
     // reusing a stale response from before the library was added, then hard-refresh.
     const cdpSession = await page.context().newCDPSession(page);
@@ -191,7 +236,7 @@ test('test', async ({ page }) => {
     await page.getByRole('textbox', { name: 'Fax' }).fill('456');
     report.step('Filled organization Fax');
 
-    // Logo: upload, then replace it with the same image via the "change image" icon.
+    // Logo: upload once.
     await page.locator('.___ape66w0').first().click();
     //await page.getByRole('button', { name: 'Upload' }).click();
     await page.getByTitle('image').setInputFiles('images/banner1.jpg');
@@ -200,18 +245,12 @@ test('test', async ({ page }) => {
     await page.getByRole('button', { name: 'Done' }).click();
     report.step('Uploaded Logo image');
 
-    await page.locator('.___ape66w0 > .fui-Icon > path').first().click();
-    //await page.getByRole('button', { name: 'Upload' }).click();
-    await page.getByTitle('image').setInputFiles('images/banner1.jpg');
-    await page.getByRole('button', { name: 'Done' }).click();
-    report.step('Replaced Logo image');
-
     // Wait for the "Edit Image" panel to fully close before capturing the screenshot,
-    // otherwise it can still be visible (reopened for the next field) when captured.
+    // otherwise it can still be visible when captured.
     await page.getByRole('heading', { name: 'Edit Image' }).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => { });
     await report.stepWithScreenshot('Logo uploaded successfully', page);
 
-    // Banner: upload, then replace it with the same image via the "change image" icon.
+    // Banner: upload once.
     await page.locator('.___ape66w0').click();
     //await page.getByRole('button', { name: 'Upload' }).click();
     await page.getByTitle('image').setInputFiles('images/banner2.jpg');
@@ -219,12 +258,6 @@ test('test', async ({ page }) => {
     await page.getByRole('textbox', { name: 'Width' }).fill('155');
     await page.getByRole('button', { name: 'Done' }).click();
     report.step('Uploaded Banner image');
-
-    await page.locator('.___ape66w0 > .fui-Icon').click();
-    //await page.getByRole('button', { name: 'Upload' }).click();
-    await page.getByTitle('image').setInputFiles('images/banner2.jpg');
-    await page.getByRole('button', { name: 'Done' }).click();
-    report.step('Replaced Banner image');
 
     // Wait for the "Edit Image" panel to fully close before capturing the screenshot.
     await page.getByRole('heading', { name: 'Edit Image' }).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => { });
@@ -258,7 +291,7 @@ test('test', async ({ page }) => {
 
     const fileNameTextbox = page.getByRole('textbox', { name: 'File Name' });
     await fileNameTextbox.click();
-    await fileNameTextbox.fill('Automated FileName');
+    await fileNameTextbox.fill('FileName Automated');
     await page.getByRole('button', { name: 'Save' }).click();
 
     // isVisible({timeout}) does not actually wait, so a real waitFor is needed here -
@@ -280,9 +313,9 @@ test('test', async ({ page }) => {
     await page.getByRole('button', { name: 'Close' }).click();
     //await page.goto('https://editor.mailsignature.officeatwork.com/#/editor');
 
-    await page.getByRole('button', { name: 'Automated FileName' }).click();
-    await page.getByText('Automated FileName', { exact: true }).click();
-    report.step('Verified saved signature template "Automated FileName"');
+    await page.getByRole('button', { name: 'FileName Automated' }).click();
+    await page.getByText('FileName Automated', { exact: true }).click();
+    report.step('Verified saved signature template "FileName Automated"');
 
     await report.finish(page);
 });

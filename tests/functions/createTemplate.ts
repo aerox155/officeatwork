@@ -1,5 +1,6 @@
 import { Page, expect } from '@playwright/test';
 import { HtmlReport } from './htmlReport';
+import { selectSharePointAtdDestination } from './selectLibrary';
 
 export async function createTemplate(page: Page, templateName: string, report?: HtmlReport) {
 
@@ -11,6 +12,7 @@ export async function createTemplate(page: Page, templateName: string, report?: 
 
     await page.getByRole('listitem', { description: 'Sources', exact: true, }).getByRole('button').click();
     report?.step('Opened Sources');
+
 
     await page.getByText('SharePoint').click();
     report?.step('Selected SharePoint source');
@@ -46,6 +48,6 @@ export async function createTemplate(page: Page, templateName: string, report?: 
     await page.getByRole('button', { name: "Don't open", }).click();
     report?.step('Dismissed "open file" prompt');
 
-return fileName;
+    return fileName;
 
 }

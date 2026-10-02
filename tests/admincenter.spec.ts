@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { signIn } from './auth/signin';
 import { HtmlReport } from './functions/htmlReport';
-import { selectSharePointAtdDestination } from './functions/selectSharePointDestination';
+import { selectSharePointAtdDestination } from './functions/selectLibrary';
 
 // These tests depend on each other's state (admin privileges, library sources),
 // so they must run one after another, in this order, rather than in parallel.
@@ -232,7 +232,7 @@ test.describe.serial('Admin Center', () => {
         const linkedLibraryInput = addDialog.getByRole('textbox').first();
         await linkedLibraryInput.waitFor({ state: 'visible', timeout: 15000 });
 
-        await selectSharePointAtdDestination(
+        await selectSharePointAtdDestination('ATD',
             linkedLibraryInput,
             addDialog.getByRole('textbox', { name: 'Name' }),
             'ATD',

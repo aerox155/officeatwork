@@ -33,8 +33,8 @@ export class HtmlReport {
         console.log(`${section.steps.length}. ${message}`);
     }
 
-    async stepWithScreenshot(message: string, page: Page) {
-        const screenshot = await page.screenshot({ fullPage: true });
+    async stepWithScreenshot(message: string, page: Page, fullPage: boolean = true) {
+        const screenshot = await page.screenshot({ fullPage });
         const section = this.currentSection();
         section.steps.push({ message, time: new Date().toLocaleString(), image: screenshot.toString('base64') });
         console.log(`${section.steps.length}. ${message}`);
